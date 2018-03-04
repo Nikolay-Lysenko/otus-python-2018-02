@@ -1,2 +1,2 @@
 # otus-python-2018-02
-Homeworks for Python development course hosted at Otus online platform.
+Solutions to homeworks for Python development course hosted at [Otus platform](https:otus.ru).
