@@ -7,7 +7,9 @@ This script aggregates statistics from Nginx logs.
 You need Python 3.5 or newer to run it (`typing` module is not
 included in prior versions).
 To study all possible options of calling the script, execute this
-from a terminal: `python log_analyzer.py -h`
+from a terminal: `python log_analyzer.py -h`.
+To launch this script with default settings, execute:
+`python log_analyzer.py`.
 """
 
 
@@ -25,7 +27,7 @@ from collections import defaultdict
 
 class LogAnalyzer:
     """
-    Parser of Nginx logs in the specified by homework description
+    Analyzer of Nginx logs in the specified by homework description
     format.
     """
 
@@ -34,12 +36,17 @@ class LogAnalyzer:
             report_size: str,
             report_dir: str,
             log_dir: str,
-            max_unparsed_lines_ratio: float = 0.2
+            ts_path: str,
+            max_unparsed_lines_ratio: float = 0.2,
+            save_results_as_attr: bool = False  # For unit tests predominantly.
             ):
         self.report_size = report_size
         self.report_dir = report_dir
         self.log_dir = log_dir
+        self.ts_path = ts_path
         self.max_unparsed_lines_ratio = max_unparsed_lines_ratio
+        self.save_results_as_attr = save_results_as_attr
+        self.stats = None
         self.__pattern = "nginx-access-ui.log-"
         self.__n_of_parsed_lines = None
         self.__total_request_time = None
@@ -51,23 +58,26 @@ class LogAnalyzer:
             file_names = os.listdir(self.log_dir)
         except FileNotFoundError as e:
             logging.error("Directory with logs not found.")
+            logging.exception(e)
             raise e
         ui_log_names = [x for x in file_names if x.startswith(self.__pattern)]
         try:
             newest_ui_log_name = sorted(ui_log_names)[-1]
         except IndexError as e:
-            logging.error("No UI logs in the directory.")
+            logging.error("No proper UI logs in the directory.")
+            logging.exception(e)
             raise e
         return newest_ui_log_name
 
-    def __create_report_path(self, newest_ui_log_name: str) -> str:
+    def __create_report_path(self, log_name: str) -> str:
         # Determine the name of the output report.
-        date_from_name = newest_ui_log_name[len(self.__pattern):].split('.')[0]
+        date_from_name = log_name[len(self.__pattern):].split('.')[0]
         try:
             log_date = datetime.datetime.strptime(date_from_name, '%Y%m%d')
             date_as_str = log_date.strftime("%Y.%m.%d")
         except Exception as e:
             logging.error("Wrong date format in the log file")
+            logging.exception(e)
             raise e
         report_name = "report-{}.html".format(date_as_str)
         report_path = os.path.join(self.report_dir, report_name)
@@ -88,11 +98,9 @@ class LogAnalyzer:
             for line in source_file:
                 yield str(line)
 
-    def __parse_log_file(
-            self, newest_ui_log_name: str
-            ) -> List[Dict[str, Any]]:
+    def __parse_log_file(self, log_name: str) -> List[Dict[str, Any]]:
         # Parse specified file and load result into operating memory.
-        log_path = os.path.join(self.log_dir, newest_ui_log_name)
+        log_path = os.path.join(self.log_dir, log_name)
         log_lines = self.__generate_lines(log_path)
         line_pattern = re.compile(
             r"(?P<remote_addr>[\d.]+)\s+"
@@ -122,7 +130,7 @@ class LogAnalyzer:
         ratio = sum(is_parsed_mask) / len(log)
         if ratio > self.max_unparsed_lines_ratio:
             msg = "{} percent of lines can not be parsed.".format(100 * ratio)
-            logging.exception(msg)
+            logging.info(msg)
         log = [x for x in log if x is not None]
         return log
 
@@ -198,17 +206,23 @@ class LogAnalyzer:
                 {
                     'url': url,
                     'count': len(url_stats['request']),
-                    'count_perc': (
-                        len(url_stats['request']) / self.__n_of_parsed_lines
+                    'count_perc': round(
+                        100
+                        * len(url_stats['request'])
+                        / self.__n_of_parsed_lines,
+                        3
                      ),
                     'time_sum': sum(url_stats['request_time']),
-                    'time_perc': (
-                        sum(url_stats['request_time'])
-                        / self.__total_request_time
+                    'time_perc': round(
+                        100
+                        * sum(url_stats['request_time'])
+                        / self.__total_request_time,
+                        3
                     ),
-                    'time_avg': (
+                    'time_avg': round(
                         sum(url_stats['request_time'])
-                        / len(url_stats['request_time'])
+                        / len(url_stats['request_time']),
+                        3
                     ),
                     'time_max': max(url_stats['request_time']),
                     'time_med': (
@@ -242,6 +256,11 @@ class LogAnalyzer:
             out_file.write(report)
         logging.info("Report is saved.")
 
+    def __report_success(self):
+        # Create a timestamp file that is a sign of successful exit.
+        with open(self.ts_path, 'w') as ts_file:
+            ts_file.write(str(datetime.datetime.now().timestamp()))
+
     def analyze_logs(self) -> type(None):
         """
         Analyze logs according to homework specification.
@@ -249,14 +268,14 @@ class LogAnalyzer:
         :return:
             None (a file is created as a result)
         """
-        newest_ui_log_name = self.__find_newest_log_file()
-        report_path = self.__create_report_path(newest_ui_log_name)
+        log_name = self.__find_newest_log_file()
+        report_path = self.__create_report_path(log_name)
         if self.__is_job_done(report_path):
             logging.info("Report already exists, skipping.")
             return
         else:
             logging.info("Analysis of log is started.")
-        log = self.__parse_log_file(newest_ui_log_name)
+        log = self.__parse_log_file(log_name)
         log = self.__get_rid_of_unparsed_lines(log)
         self.__memorize_total_stats(log)
         log = self.__group_by_url(log)
@@ -264,6 +283,9 @@ class LogAnalyzer:
         stats = self.__compute_stats(log)
         stats = self.__keep_only_top_urls(stats)
         self.__save_as_html(stats, report_path)
+        if self.save_results_as_attr:
+            self.stats = stats
+        self.__report_success()
 
 
 def parse_cli_args() -> argparse.Namespace:
@@ -278,7 +300,13 @@ def parse_cli_args() -> argparse.Namespace:
         '-c', '--config', type=str, default='',
         help='path to file with configuration, this file must contain lines '
              'of the form: "KEY value" where KEY must be one of these: '
-             'REPORT_SIZE, REPORT_DIR, LOG_DIR, LOGGING_FILE'
+             'REPORT_SIZE (number of top URLS to be included), '
+             'REPORT_DIR (directory where report file will be created), '
+             'LOG_DIR (directory that contains initial logs) ,'
+             'LOGGING_FILE (full path to file where logs of script execution '
+             'will be created, by default stdout is used instead of a file), '
+             'TS_PATH (full path to file where timestamp of last successful '
+             'call is stored).'
     )
     cli_args = parser.parse_args()
     return cli_args
@@ -298,7 +326,8 @@ def parse_config_from_file(path_to_config: str) -> Dict[str, Any]:
         "REPORT_DIR": None,
         "LOG_DIR": None,
         "MAX_UNPARSED_LINES_RATIO": None,
-        "LOGGING_FILE": None
+        "LOGGING_FILE": None,
+        "TS_PATH": None
     }
     if path_to_config:
         if not os.path.isfile(path_to_config):
@@ -332,7 +361,8 @@ def coalesce_settings(cli_args: argparse.Namespace) -> Dict[str, Any]:
         "REPORT_DIR": "./reports",
         "LOG_DIR": "./log",
         "MAX_UNPARSED_LINES_RATIO": 0.2,
-        "LOGGING_FILE": None
+        "LOGGING_FILE": None,
+        "TS_PATH": "/var/tmp/log_analyzer.ts"
     }
     passed_config = parse_config_from_file(cli_args.config)
     config = {k: passed_config[k] or v for k, v in default_config.items()}
