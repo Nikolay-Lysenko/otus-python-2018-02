@@ -68,16 +68,7 @@ def main():
         level=logging.INFO
     )
 
-    test_loader = unittest.TestLoader()
-    suites_list = []
-    testers = [
-        TestLogAnalyzer()
-    ]
-    for tester in testers:
-        suite = test_loader.loadTestsFromModule(tester)
-        suites_list.append(suite)
-    overall_suite = unittest.TestSuite(suites_list)
-    unittest.TextTestRunner().run(overall_suite)
+    unittest.main()
 
 
 if __name__ == '__main__':

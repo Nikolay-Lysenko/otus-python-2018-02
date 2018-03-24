@@ -11,7 +11,7 @@ from setuptools import setup, find_packages
 
 current_dir = os.path.abspath(os.path.dirname(__file__))
 
-with open(os.path.join(current_dir, 'README.md'), encoding='utf-8') as f:
+with open(os.path.join(current_dir, 'README.md')) as f:
     long_description = f.read()
 
 setup(
@@ -25,6 +25,6 @@ setup(
     license='MIT',
     keywords='python_courses homeworks',
     packages=find_packages(exclude=['tests', 'docs']),
-    python_requires='>=3.5',
+    python_requires='>=2.7, <3',
     install_requires=[]
 )

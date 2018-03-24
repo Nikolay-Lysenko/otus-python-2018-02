@@ -1,11 +1,8 @@
-#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
 
 """
 This script aggregates statistics from Nginx logs.
-You need Python 3.5 or newer to run it (`typing` module is not
-included in prior versions).
 To study all possible options of calling the script, execute this
 from a terminal: `python log_analyzer.py -h`.
 To launch this script with default settings, execute:
@@ -18,14 +15,14 @@ import logging
 import warnings
 import os
 import re
+import time
 import datetime
 import json
 import gzip
-from typing import List, Dict, Generator, Any, Optional
 from collections import defaultdict
 
 
-class LogAnalyzer:
+class LogAnalyzer(object):
     """
     Analyzer of Nginx logs in the specified by homework description
     format.
@@ -33,12 +30,12 @@ class LogAnalyzer:
 
     def __init__(
             self,
-            report_size: str,
-            report_dir: str,
-            log_dir: str,
-            ts_path: str,
-            max_unparsed_lines_ratio: float = 0.2,
-            save_results_as_attr: bool = False  # For unit tests predominantly.
+            report_size,                   # type: str
+            report_dir,                    # type: str
+            log_dir,                       # type: str
+            ts_path,                       # type: str
+            max_unparsed_lines_ratio=0.2,  # type: float
+            save_results_as_attr=False     # type: bool
             ):
         self.report_size = report_size
         self.report_dir = report_dir
@@ -52,11 +49,12 @@ class LogAnalyzer:
         self.__total_request_time = None
         logging.info("Instance of `LogAnalyzer` has been created.")
 
-    def __find_newest_log_file(self) -> str:
+    def __find_newest_log_file(self):
+        # type: () -> str
         # Find a proper file with the most recent date in its name.
         try:
             file_names = os.listdir(self.log_dir)
-        except FileNotFoundError as e:
+        except IOError as e:
             logging.error("Directory with logs not found.")
             logging.exception(e)
             raise e
@@ -69,7 +67,8 @@ class LogAnalyzer:
             raise e
         return newest_ui_log_name
 
-    def __create_report_path(self, log_name: str) -> str:
+    def __create_report_path(self, log_name):
+        # type: (str) -> bool
         # Determine the name of the output report.
         date_from_name = log_name[len(self.__pattern):].split('.')[0]
         try:
@@ -83,12 +82,15 @@ class LogAnalyzer:
         report_path = os.path.join(self.report_dir, report_name)
         return report_path
 
-    def __is_job_done(self, report_path: str) -> bool:
+    @staticmethod
+    def __is_job_done(report_path):
+        # type: (str) -> bool
         # Check whether log file already has been processed.
         return os.path.isfile(report_path)
 
     @staticmethod
-    def __generate_lines(file_path: str) -> Generator[str, None, None]:
+    def __generate_lines(file_path):
+        # type: (str) -> Generator[str, None, None]
         # Generate lines of a specified file one by one.
         if file_path.endswith('.gz'):
             open_fn = gzip.open
@@ -98,7 +100,8 @@ class LogAnalyzer:
             for line in source_file:
                 yield str(line)
 
-    def __parse_log_file(self, log_name: str) -> List[Dict[str, Any]]:
+    def __parse_log_file(self, log_name):
+        # type: (str) -> List[Dict[str, Any]]
         # Parse specified file and load result into operating memory.
         log_path = os.path.join(self.log_dir, log_name)
         log_lines = self.__generate_lines(log_path)
@@ -124,7 +127,8 @@ class LogAnalyzer:
         logging.info("Logs are loaded to operating memory.")
         return log
 
-    def __get_rid_of_unparsed_lines(self, log: List[Dict[str, Any]]):
+    def __get_rid_of_unparsed_lines(self, log):
+        # type: (List[Dict[str, Any]]) -> List[Dict[str, Any]]
         # Check that number of unparsed lines is not too big and drop them.
         is_parsed_mask = [x is None for x in log]
         ratio = sum(is_parsed_mask) / len(log)
@@ -134,7 +138,8 @@ class LogAnalyzer:
         log = [x for x in log if x is not None]
         return log
 
-    def __memorize_total_stats(self, log: List[Dict[str, Any]]) -> type(None):
+    def __memorize_total_stats(self, log):
+        # type: (List[Dict[str, Any]]) -> type(None)
         # Store overall statistics in class attributes.
         self.__n_of_parsed_lines = len(log)
         self.__total_request_time = sum(
@@ -145,60 +150,56 @@ class LogAnalyzer:
             ]
         )
 
-    def __group_by_url(
-            self,
-            log: List[Dict[str, Any]]
-            ) -> Dict[str, Dict[str, List[Any]]]:
+    @staticmethod
+    def __extract_url_from_request(log_record):
+        # type: (Dict[str, Any]) -> Dict[str, Any]
+        # Extract URL from logged request and create a key for it.
+        log_record.update(
+            {'url':
+                log_record['request']
+                .replace('GET ', '')
+                .replace('POST ', '')
+                .split(' ')[0]
+             }
+        )
+        return log_record
+
+    def __group_by_url(self, log):
+        # type: (List[Dict[str, Any]]) -> Dict[str, Dict[str, List[Any]]]
         # Change data structure that stores the log in operating memory.
         log = [
-            dict(
-                **x,
-                **{'url':
-                    x['request']
-                    .replace('GET ', '')
-                    .replace('POST ', '')
-                    .split(' ')[0]
-                   }
-            )
-            for x in log
+            self.__extract_url_from_request(log_record)
+            for log_record in log
         ]
         columns = [key for key in log[0].keys() if key != 'url']
-        grouped_log = defaultdict(lambda: {column: [] for column in columns})
+        grouped_log = defaultdict(lambda: {col: [] for col in columns})
         for log_line in log:
             for column in columns:
                 grouped_log[log_line['url']][column].append(log_line[column])
         logging.info("Log lines are grouped by URL.")
         return grouped_log
 
+    @staticmethod
     def __drop_missing_values(
-            self,
-            log: Dict[str, Dict[str, List[Any]]]
-            ) -> Dict[str, Dict[str, List[Any]]]:
+            log  # type: Dict[str, Dict[str, List[Any]]]
+            ):
+        # type: (...) -> Dict[str, Dict[str, List[Any]]]
         # Drop placeholders of missings.
         missing_placeholders = ['-']
         log = {
             url: dict(
                 **{
                     k: v
-                    for k, v in url_stats.items()
                     if k != 'request_time'
-                },
-                **{
-                    'request_time': [
-                        float(x)
-                        for x in url_stats['request_time']
-                        if x not in missing_placeholders
-                    ]
-                }
-            )
+                    else [float(x) for x in v if x not in missing_placeholders]
+                    for k, v in url_stats.items()
+                })
             for url, url_stats in log.items()
         }
         return log
 
-    def __compute_stats(
-            self,
-            log: Dict[str, Dict[str, List[Any]]]
-            ) -> List[Dict[str, Any]]:
+    def __compute_stats(self, log):
+        # type: (Dict[str, Dict[str, List[Any]]]) -> List[Dict[str, Any]]
         # Compute required in the task statistics.
         stats = []
         for url, url_stats in log.items():
@@ -207,20 +208,20 @@ class LogAnalyzer:
                     'url': url,
                     'count': len(url_stats['request']),
                     'count_perc': round(
-                        100
+                        100.0
                         * len(url_stats['request'])
                         / self.__n_of_parsed_lines,
                         3
                      ),
                     'time_sum': sum(url_stats['request_time']),
                     'time_perc': round(
-                        100
+                        100.0
                         * sum(url_stats['request_time'])
                         / self.__total_request_time,
                         3
                     ),
                     'time_avg': round(
-                        sum(url_stats['request_time'])
+                        float(sum(url_stats['request_time']))
                         / len(url_stats['request_time']),
                         3
                     ),
@@ -234,7 +235,8 @@ class LogAnalyzer:
         logging.info("Statistics are computed.")
         return stats
 
-    def __keep_only_top_urls(self, stats: List[Dict[str, Any]]):
+    def __keep_only_top_urls(self, stats):
+        # type: (List[Dict[str, Any]]) -> List[Dict[str, Any]]
         # Reduce size of the report.
         stats = sorted(stats, key=lambda x: x['time_sum'], reverse=True)
         n_urls = min([self.report_size, len(stats)])
@@ -242,10 +244,11 @@ class LogAnalyzer:
 
     def __save_as_html(
             self,
-            stats: List[Dict[str, Any]],
-            report_path: str,
-            sample_report_path: Optional[str] = None
-            ) -> type(None):
+            stats,                   # type: List[Dict[str, Any]]
+            report_path,             # type: str
+            sample_report_path=None  # type: Optional[str]
+            ):
+        # type: () -> type(None)
         # Save results in the required format.
         if sample_report_path is None:
             sample_report_path = os.path.join(self.report_dir, 'report.html')
@@ -259,9 +262,10 @@ class LogAnalyzer:
     def __report_success(self):
         # Create a timestamp file that is a sign of successful exit.
         with open(self.ts_path, 'w') as ts_file:
-            ts_file.write(str(datetime.datetime.now().timestamp()))
+            ts_file.write(str(time.time()))
 
-    def analyze_logs(self) -> type(None):
+    def analyze_logs(self):
+        # type: (...) -> type(None)
         """
         Analyze logs according to homework specification.
 
@@ -288,7 +292,8 @@ class LogAnalyzer:
         self.__report_success()
 
 
-def parse_cli_args() -> argparse.Namespace:
+def parse_cli_args():
+    # type: () -> argparse.Namespace
     """
     Parse arguments passed via Command Line Interface (CLI).
 
@@ -312,7 +317,8 @@ def parse_cli_args() -> argparse.Namespace:
     return cli_args
 
 
-def parse_config_from_file(path_to_config: str) -> Dict[str, Any]:
+def parse_config_from_file(path_to_config):
+    # type: (str) -> Dict[str, Any]
     """
     Extract settings from a user-defined file.
 
@@ -331,7 +337,7 @@ def parse_config_from_file(path_to_config: str) -> Dict[str, Any]:
     }
     if path_to_config:
         if not os.path.isfile(path_to_config):
-            raise FileNotFoundError("No such file: {}".format(path_to_config))
+            raise IOError("No such file: {}".format(path_to_config))
         with open(path_to_config, 'r') as config_file:
             for line in config_file:
                 split_line = line.split(' ')
@@ -346,7 +352,8 @@ def parse_config_from_file(path_to_config: str) -> Dict[str, Any]:
     return passed_config
 
 
-def coalesce_settings(cli_args: argparse.Namespace) -> Dict[str, Any]:
+def coalesce_settings(cli_args):
+    # type: (argparse.Namespace) -> Dict[str, Any]
     """
     Override default config values with user-defined ones if there
     are any.
@@ -370,7 +377,8 @@ def coalesce_settings(cli_args: argparse.Namespace) -> Dict[str, Any]:
     return config
 
 
-def set_logging(logging_filename: Optional[str]) -> type(None):
+def set_logging(logging_filename):
+    # type: (Optional[str]) -> type(None)
     """
     Set logging according to homework specification.
 
@@ -380,6 +388,10 @@ def set_logging(logging_filename: Optional[str]) -> type(None):
     :return:
         None
     """
+    filename_is_provided = logging_filename is not None
+    path_to_file_exists = os.path.isdir(os.path.dirname(logging_filename))
+    if filename_is_provided and not path_to_file_exists:
+        os.makedirs(logging_filename)
     msg_format = '[%(asctime)s] %(levelname).1s %(message)s'
     datetime_fmt = '%Y.%m.%d %H:%M:%S'
     logging.basicConfig(
@@ -396,8 +408,11 @@ def main():
     config = coalesce_settings(cli_args)
     logging_filename = config.pop('logging_file')
     set_logging(logging_filename)
-    log_analyzer = LogAnalyzer(**config)
-    log_analyzer.analyze_logs()
+    try:
+        log_analyzer = LogAnalyzer(**config)
+        log_analyzer.analyze_logs()
+    except Exception as e:
+        logging.exception(e)
 
 
 if __name__ == "__main__":
