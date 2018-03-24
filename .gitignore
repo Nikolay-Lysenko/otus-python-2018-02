@@ -106,4 +106,4 @@ ENV/
 .save
 
 # Git is for code, not for data
-.gz
+*.gz
