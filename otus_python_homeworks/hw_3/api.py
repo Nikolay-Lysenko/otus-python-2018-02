@@ -10,8 +10,8 @@ from a terminal: `python api.py -h`.
 To launch a service with default settings, execute:
 `python api.py`.
 After server is started, you can send requests to it. A sample commands
-that can be executed from a terminal are provided at the file named
-`sample_requests.txt`.
+that can be executed from a terminal are provided at the `README.md`
+file of the current directory.
 """
 
 
