@@ -9,9 +9,9 @@ To study all possible options of configuring a service, execute this
 from a terminal: `python api.py -h`.
 To launch a service with default settings, execute:
 `python api.py`.
-After server is started, you can send requests to it. A sample command
-that should be executed from a terminal is provided at the file named
-`sample_request.txt`.
+After server is started, you can send requests to it. A sample commands
+that can be executed from a terminal are provided at the file named
+`sample_requests.txt`.
 """
 
 
@@ -55,7 +55,7 @@ GENDERS = {
 }
 
 
-# ------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # Descriptors for fields validation.
 
 class BaseField(object):
@@ -87,9 +87,9 @@ class BaseField(object):
         Check that a value is in accordance with instance settings.
         """
         if value is None and self.required:
-            raise ValueError("This field must be passed explicitly.")
+            raise ValueError("Required fields must be passed explicitly.")
         if not value and not self.nullable:
-            raise ValueError("Empty strings are disabled: %s" % value)
+            raise ValueError("Empty value in a non-nullable field: %s" % value)
 
 
 class CharField(BaseField):
@@ -97,7 +97,8 @@ class CharField(BaseField):
 
     def __set__(self, instance, value):
         self.check_completeness(value)
-        self.check_is_char(value)
+        if value:
+            self.check_is_char(value)
         self.data[instance] = value
 
     @staticmethod
@@ -112,7 +113,7 @@ class ArgumentsField(BaseField):
 
     def __set__(self, instance, value):
         self.check_completeness(value)
-        if not isinstance(value, dict):
+        if value and not isinstance(value, dict):
             raise ValueError("Non-dict values are not allowed: %s" % value)
         self.data[instance] = value
 
@@ -122,16 +123,17 @@ class EmailField(CharField):
 
     def __set__(self, instance, value):
         self.check_completeness(value)
-        self.check_is_char(value)
-        split_value = value.split('@')
-        email_is_invalid = (
-            len(split_value) != 2
-            or len(split_value[0]) == 0
-            or len(split_value[1]) == 0
-            or '.' not in split_value[1]
-        )
-        if value and email_is_invalid:
-            raise ValueError("It does not look like an email: %s" % value)
+        if value:
+            self.check_is_char(value)
+            split_value = value.split('@')
+            email_is_invalid = (
+                len(split_value) != 2
+                or len(split_value[0]) == 0
+                or len(split_value[1]) == 0
+                or '.' not in split_value[1]
+            )
+            if email_is_invalid:
+                raise ValueError("It does not look like an email: %s" % value)
         self.data[instance] = value
 
 
@@ -140,19 +142,20 @@ class PhoneField(BaseField):
 
     def __set__(self, instance, value):
         self.check_completeness(value)
-        if not isinstance(value, (str, unicode, int)):
-            raise ValueError("Values is neither char nor integer: %s" % value)
-        try:
-            value = int(value) if value else ''
-        except TypeError:
-            raise ValueError("Non-digits are in phone value: %s" % value)
-        value = str(value)
-        phone_validity = (
-            len(value) == 11
-            and value.startswith('7')
-        )
-        if value and not phone_validity:
-            raise ValueError("It does not look like a phone: %s" % value)
+        if value:
+            if not isinstance(value, (str, unicode, int)):
+                raise ValueError("Value is neither char nor int: %s" % value)
+            try:
+                value = int(value)
+            except TypeError:
+                raise ValueError("Non-digits are in phone value: %s" % value)
+            value = str(value)
+            phone_validity = (
+                len(value) == 11
+                and value.startswith('7')
+            )
+            if not phone_validity:
+                raise ValueError("It does not look like a phone: %s" % value)
         self.data[instance] = value
 
 
@@ -164,16 +167,16 @@ class DateField(CharField):
 
     def __set__(self, instance, value):
         self.check_completeness(value)
-        self.check_is_char(value)
-        self.check_is_date(value)
+        if value:
+            self.check_is_char(value)
+            self.check_is_date(value)
         self.data[instance] = value
 
     @staticmethod
     def check_is_date(value):
         """Check that it is a date in 'DD.MM.YYYY' format."""
-        if not value:
-            return
-        _ = datetime.datetime.strptime(value, '%d.%m.%Y')
+        if value:
+            _ = datetime.datetime.strptime(value, '%d.%m.%Y')
 
 
 class BirthDayField(DateField):
@@ -181,18 +184,19 @@ class BirthDayField(DateField):
 
     def __set__(self, instance, value):
         self.check_completeness(value)
-        self.check_is_char(value)
-        self.check_is_date(value)
-        today = datetime.date.today()
-        value_as_date = (
-            datetime.datetime.strptime(value, '%d.%m.%Y').date()
-            if value
-            else None
-        )
-        days_per_year = 365.25
-        max_age = 70
-        if value and (today - value_as_date).days / days_per_year > max_age:
-            raise ValueError('Sorry, this birthday looks obsolete: %s' % value)
+        if value:
+            self.check_is_char(value)
+            self.check_is_date(value)
+            today = datetime.date.today()
+            value_as_date = (
+                datetime.datetime.strptime(value, '%d.%m.%Y').date()
+                if value
+                else None
+            )
+            days_per_year = 365.25
+            max_age = 70
+            if (today - value_as_date).days / days_per_year > max_age:
+                raise ValueError('Sorry, too distant birthday: %s' % value)
         self.data[instance] = value
 
 
@@ -201,7 +205,7 @@ class GenderField(BaseField):
 
     def __set__(self, instance, value):
         self.check_completeness(value)
-        if value not in GENDERS.keys():
+        if value and value not in GENDERS.keys():
             raise ValueError("Invalid gender code: %s" % value)
         self.data[instance] = value
 
@@ -211,15 +215,16 @@ class ClientIDsField(BaseField):
 
     def __set__(self, instance, value):
         self.check_completeness(value)
-        if not isinstance(value, list):
-            raise ValueError("Client IDs must be stored in array: %s" % value)
-        types_from_value = set([type(x) for x in value])
-        if types_from_value != {int}:
-            raise ValueError("Non-integer type occurred: %s" % types_from_value)
+        if value:
+            if not isinstance(value, list):
+                raise ValueError("IDs must be stored in array: %s" % value)
+            value_types = set([type(x) for x in value])
+            if value_types != {int}:
+                raise ValueError("Non-integer type occurred: %s" % value_types)
         self.data[instance] = value
 
 
-# ------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # Classes for requests validation.
 
 class ClientsInterestsRequest(object):
@@ -250,6 +255,13 @@ class OnlineScoreRequest(object):
             first_name=None, last_name=None, email=None, phone=None,
             birthday=None, gender=None
             ):
+        pairwise_validity = (
+            (first_name and last_name)
+            or (email and phone)
+            or (birthday and gender)
+        )
+        if not pairwise_validity:
+            raise ValueError("No pairs where both values are non-empty.")
         self.first_name = first_name
         self.last_name = last_name
         self.email = email
@@ -283,7 +295,7 @@ class MethodRequest(object):
         self.method = method
 
 
-# ------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # Functions with business logic.
 
 def check_auth(request):
@@ -363,7 +375,7 @@ def method_handler(request, context, store):
     return response, code
 
 
-# ------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # Web server.
 
 class MainHTTPHandler(BaseHTTPRequestHandler):
@@ -422,7 +434,7 @@ class MainHTTPHandler(BaseHTTPRequestHandler):
         return
 
 
-# ------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # User interaction tools.
 
 def parse_cli_args():
@@ -440,7 +452,7 @@ def parse_cli_args():
     )
     parser.add_argument(
         '-l', '--logging_file', type=str, default=None,
-        help='full path to file where logs of script execution will be created,'
+        help='full path to file where logs of script execution will be stored,'
              'by default stdout is used instead of a file'
     )
     cli_args = parser.parse_args()
@@ -458,8 +470,8 @@ def set_logging(logging_filename):
     :return:
         None
     """
-    filename_passed = logging_filename is not None
-    if filename_passed and not os.path.isdir(os.path.dirname(logging_filename)):
+    fname_passed = logging_filename is not None
+    if fname_passed and not os.path.isdir(os.path.dirname(logging_filename)):
         os.makedirs(logging_filename)
     msg_format = '[%(asctime)s] %(levelname).1s %(message)s'
     datetime_fmt = '%Y.%m.%d %H:%M:%S'
