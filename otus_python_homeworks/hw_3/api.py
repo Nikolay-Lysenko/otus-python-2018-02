@@ -80,12 +80,7 @@ class BaseField(object):
 
     @abstractmethod
     def __set__(self, instance, value):
-        pass
-
-    def check_completeness(self, value):
-        """
-        Check that a value is in accordance with instance settings.
-        """
+        # Check that a value is in accordance with instance settings.
         if value is None and self.required:
             raise ValueError("Required fields must be passed explicitly.")
         if not value and not self.nullable:
@@ -96,23 +91,17 @@ class CharField(BaseField):
     """A descriptor that prohibits non-char values."""
 
     def __set__(self, instance, value):
-        self.check_completeness(value)
-        if value:
-            self.check_is_char(value)
-        self.data[instance] = value
-
-    @staticmethod
-    def check_is_char(value):
-        """Check that a value is a char."""
-        if not isinstance(value, (str, unicode)):
+        super(CharField, self).__set__(instance, value)
+        if value and not isinstance(value, (str, unicode)):
             raise ValueError("Non-char values are not allowed: %s" % value)
+        self.data[instance] = value
 
 
 class ArgumentsField(BaseField):
     """A descriptor that validates nested requests."""
 
     def __set__(self, instance, value):
-        self.check_completeness(value)
+        super(ArgumentsField, self).__set__(instance, value)
         if value and not isinstance(value, dict):
             raise ValueError("Non-dict values are not allowed: %s" % value)
         self.data[instance] = value
@@ -122,9 +111,8 @@ class EmailField(CharField):
     """A descriptor that validates email address."""
 
     def __set__(self, instance, value):
-        self.check_completeness(value)
+        super(EmailField, self).__set__(instance, value)
         if value:
-            self.check_is_char(value)
             split_value = value.split('@')
             email_is_invalid = (
                 len(split_value) != 2
@@ -141,7 +129,7 @@ class PhoneField(BaseField):
     """A descriptor that validates phone number."""
 
     def __set__(self, instance, value):
-        self.check_completeness(value)
+        super(PhoneField, self).__set__(instance, value)
         if value:
             if not isinstance(value, (str, unicode, int)):
                 raise ValueError("Value is neither char nor int: %s" % value)
@@ -166,27 +154,21 @@ class DateField(CharField):
     """
 
     def __set__(self, instance, value):
-        self.check_completeness(value)
+        super(DateField, self).__set__(instance, value)
         if value:
-            self.check_is_char(value)
-            self.check_is_date(value)
+            try:
+                datetime.datetime.strptime(value, '%d.%m.%Y')
+            except ValueError:
+                raise ValueError("Date %s not in format 'DD.MM.YYYY'" % value)
         self.data[instance] = value
-
-    @staticmethod
-    def check_is_date(value):
-        """Check that it is a date in 'DD.MM.YYYY' format."""
-        if value:
-            _ = datetime.datetime.strptime(value, '%d.%m.%Y')
 
 
 class BirthDayField(DateField):
     """A descriptor that validates birthdays."""
 
     def __set__(self, instance, value):
-        self.check_completeness(value)
+        super(BirthDayField, self).__set__(instance, value)
         if value:
-            self.check_is_char(value)
-            self.check_is_date(value)
             today = datetime.date.today()
             value_as_date = (
                 datetime.datetime.strptime(value, '%d.%m.%Y').date()
@@ -204,7 +186,7 @@ class GenderField(BaseField):
     """A descriptor that validates gender codes."""
 
     def __set__(self, instance, value):
-        self.check_completeness(value)
+        super(GenderField, self).__set__(instance, value)
         if value and value not in GENDERS.keys():
             raise ValueError("Invalid gender code: %s" % value)
         self.data[instance] = value
@@ -214,13 +196,14 @@ class ClientIDsField(BaseField):
     """A descriptor that validates sequences of client IDs."""
 
     def __set__(self, instance, value):
-        self.check_completeness(value)
+        super(ClientIDsField, self).__set__(instance, value)
         if value:
             if not isinstance(value, list):
                 raise ValueError("IDs must be stored in array: %s" % value)
             value_types = set([type(x) for x in value])
             if value_types != {int}:
-                raise ValueError("Non-integer type occurred: %s" % value_types)
+                bad_types = [x for x in value_types if x != int]
+                raise ValueError("Non-integer types in IDs: %s" % bad_types)
         self.data[instance] = value
 
 
@@ -320,9 +303,9 @@ def clients_interests_handler(request, context, store):
     response, code = {}, OK
     try:
         nested_request = ClientsInterestsRequest(**request.arguments)
-    except ValueError:
+    except ValueError as e:
         logging.exception('Validation error: ')
-        response, code = ERRORS[BAD_REQUEST], BAD_REQUEST
+        response, code = str(e), BAD_REQUEST
         return response, code
     context['nclients'] = len(nested_request.client_ids)
     for client_id in nested_request.client_ids:
@@ -336,19 +319,16 @@ def online_score_handler(request, context, store):
     response, code = {}, OK
     try:
         nested_request = OnlineScoreRequest(**request.arguments)
-    except ValueError:
+    except ValueError as e:
         logging.exception('Validation error: ')
-        response, code = ERRORS[BAD_REQUEST], BAD_REQUEST
+        response, code = str(e), BAD_REQUEST
         return response, code
     fields = [
-        nested_request.first_name,
-        nested_request.last_name,
-        nested_request.email,
-        nested_request.phone,
-        nested_request.birthday,
-        nested_request.gender
+        'first_name', 'last_name', 'email', 'phone', 'birthday', 'gender'
     ]
-    context['has'] = sum([bool(field) for field in fields])
+    context['has'] = [
+        field for field in fields if nested_request.__getattribute__(field)
+    ]
     score = 42 if request.is_admin else get_score(store, **request.arguments)
     response = {'score': score}
     return response, code
@@ -359,9 +339,9 @@ def method_handler(request, context, store):
     """Redirect arbitrary request to corresponding handler."""
     try:
         request = MethodRequest(**request['body'])
-    except (KeyError, ValueError):
+    except (KeyError, ValueError) as e:
         logging.exception('Can not validate POST request: ')
-        response, code = ERRORS[INVALID_REQUEST], INVALID_REQUEST
+        response, code = str(e), INVALID_REQUEST
         return response, code
     if not check_auth(request):
         response, code = ERRORS[FORBIDDEN], FORBIDDEN
