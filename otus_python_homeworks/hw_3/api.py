@@ -303,6 +303,10 @@ def clients_interests_handler(request, context, store):
     response, code = {}, OK
     try:
         nested_request = ClientsInterestsRequest(**request.arguments)
+    except TypeError as e:
+        logging.exception('Extra arguments in request: ')
+        response, code = str(e), INVALID_REQUEST
+        return response, code
     except ValueError as e:
         logging.exception('Validation error: ')
         response, code = str(e), BAD_REQUEST
@@ -319,6 +323,10 @@ def online_score_handler(request, context, store):
     response, code = {}, OK
     try:
         nested_request = OnlineScoreRequest(**request.arguments)
+    except TypeError as e:
+        logging.exception('Extra arguments in request: ')
+        response, code = str(e), INVALID_REQUEST
+        return response, code
     except ValueError as e:
         logging.exception('Validation error: ')
         response, code = str(e), BAD_REQUEST
@@ -339,19 +347,23 @@ def method_handler(request, context, store):
     """Redirect arbitrary request to corresponding handler."""
     try:
         request = MethodRequest(**request['body'])
-    except (KeyError, ValueError) as e:
+    except (KeyError, TypeError, ValueError) as e:
         logging.exception('Can not validate POST request: ')
         response, code = str(e), INVALID_REQUEST
         return response, code
     if not check_auth(request):
         response, code = ERRORS[FORBIDDEN], FORBIDDEN
         return response, code
-    if request.method == 'clients_interests':
-        response, code = clients_interests_handler(request, context, store)
-    elif request.method == 'online_score':
-        response, code = online_score_handler(request, context, store)
-    else:
-        response, code = ERRORS[BAD_REQUEST], BAD_REQUEST
+    handlers = {
+        'clients_interests': clients_interests_handler,
+        'online_score': online_score_handler
+    }
+    try:
+        response, code = handlers[request.method](request, context, store)
+    except KeyError:
+        logging.exception('Unrecognized method: ')
+        response = 'Unrecognized method: %s' % request.method
+        code = INVALID_REQUEST
     return response, code
 
 
