@@ -27,6 +27,7 @@ from BaseHTTPServer import HTTPServer, BaseHTTPRequestHandler
 from weakref import WeakKeyDictionary
 
 from scoring import get_score, get_interests
+from store import Store
 
 
 SALT = "Otus"
@@ -374,7 +375,7 @@ class MainHTTPHandler(BaseHTTPRequestHandler):
     router = {
         "method": method_handler
     }
-    store = None
+    store = Store()
 
     @staticmethod
     def get_request_id(headers):
