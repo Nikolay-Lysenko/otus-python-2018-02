@@ -71,4 +71,7 @@ class InMemoryStorage(object):
         """
         Get value from a sort of DB which is actually in-memory cache.
         """
-        return self.cache_get(key)
+        result = self.cache_get(key)
+        if result is None:
+            raise KeyError('Requested key is absent in DB: %s' % key)
+        return result
