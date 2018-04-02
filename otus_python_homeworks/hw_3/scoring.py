@@ -1,5 +1,6 @@
 import hashlib
 import json
+import datetime
 
 
 def get_score(
@@ -9,7 +10,8 @@ def get_score(
     key_parts = [
         first_name or "",
         last_name or "",
-        birthday.strftime("%Y%m%d") if birthday is not None else "",
+        datetime.datetime.strptime(birthday, '%d.%m.%Y').strftime("%Y%m%d")
+        if birthday is not None else "",
     ]
     key = "uid:" + hashlib.md5("".join(key_parts)).hexdigest()
     # Try get from cache, else fall back to calculation considered to be heavy.

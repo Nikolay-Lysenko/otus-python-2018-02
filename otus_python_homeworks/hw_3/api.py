@@ -173,8 +173,6 @@ class BirthDayField(DateField):
             today = datetime.date.today()
             value_as_date = (
                 datetime.datetime.strptime(value, '%d.%m.%Y').date()
-                if value
-                else None
             )
             days_per_year = 365.25
             max_age = 70
