@@ -9,19 +9,31 @@ TOKEN = (
 )
 
 
-def cases(requests):
+# -----------------------------------------------------------------------------
+# Decorators.
+
+def cases(test_inputs):
     """
     A decorator for passing various test cases.
     """
 
     def nested_decorator(func):
         def wrapper(*args, **kwargs):
-            for request in requests:
-                func(request=request, *args, **kwargs)
+            for test_input in test_inputs:
+                test_input = (
+                    (test_input,)
+                    if not isinstance(test_input, tuple)
+                    else test_input
+                )
+                arguments = args + test_input
+                func(*arguments, **kwargs)
         return wrapper
 
     return nested_decorator
 
+
+# -----------------------------------------------------------------------------
+# Mocks.
 
 class StorageMock(object):
     """
@@ -41,8 +53,240 @@ class StorageMock(object):
         return self.kv.get(key)
 
 
+class DescriptorMock(object):
+    """
+    Mock for a class that has fields with descriptors.
+    """
+    def __init__(self, value):
+        self.value = value
+
+
 # -----------------------------------------------------------------------------
 # Unit tests.
+
+class TestDescriptors(unittest.TestCase):
+    """
+    Test all customized fields.
+    """
+    
+    def setUp(self):
+        self.error = ''
+
+    def test_char_field_with_non_char(self):
+        """Test `CharField` descriptor with integer value."""
+        DescriptorMock.value = api.CharField(required=True)
+        try:
+            DescriptorMock(1)
+        except ValueError as e:
+            self.error = str(e)
+        self.assertTrue('Non-char' in self.error)
+
+    def test_char_field_with_empty_string(self):
+        """Test `CharField` descriptor with empty string."""
+        DescriptorMock.value = api.CharField(required=True)
+        try:
+            DescriptorMock('')
+        except ValueError as e:
+            self.error = str(e)
+        self.assertTrue('Empty' in self.error)
+
+    def test_char_field_with_valid_value(self):
+        """Test `CharField` descriptor with valid chars."""
+        DescriptorMock.value = api.CharField(required=True)
+        try:
+            DescriptorMock("a")
+            DescriptorMock("A + b")
+        except Exception as e:
+            self.error = str(e)
+        self.assertFalse(self.error)
+
+    def test_arguments_field_with_non_char(self):
+        """Test `ArgumentsField` descriptor with integer value."""
+        DescriptorMock.value = api.ArgumentsField(required=True)
+        try:
+            DescriptorMock(1)
+        except ValueError as e:
+            self.error = str(e)
+        self.assertTrue('Non-dict' in self.error)
+
+    def test_arguments_field_with_empty_dict(self):
+        """Test `ArgumentsField` descriptor with empty dict."""
+        DescriptorMock.value = api.ArgumentsField(required=True)
+        try:
+            DescriptorMock({})
+        except ValueError as e:
+            self.error = str(e)
+        self.assertTrue('Empty' in self.error)
+
+    def test_arguments_field_with_valid_value(self):
+        """Test `ArgumentsField` descriptor with valid dicts."""
+        DescriptorMock.value = api.ArgumentsField(required=True)
+        try:
+            DescriptorMock({"a": 1})
+            DescriptorMock({1: 2, 3: 5})
+        except Exception as e:
+            self.error = str(e)
+        self.assertFalse(self.error)
+        
+    def test_email_field_without_at(self):
+        """Test `EmailField` descriptor without @ symbol."""
+        DescriptorMock.value = api.EmailField(required=True)
+        try:
+            DescriptorMock("me-at-otus.ru")
+        except ValueError as e:
+            self.error = str(e)
+        self.assertTrue('look like' in self.error)
+
+    def test_email_field_without_dot(self):
+        """Test `EmailField` descriptor without dot."""
+        DescriptorMock.value = api.EmailField(required=True)
+        try:
+            DescriptorMock("me@otusru")
+        except ValueError as e:
+            self.error = str(e)
+        self.assertTrue('look like' in self.error)
+
+    def test_email_field_with_valid_value(self):
+        """Test `EmailField` descriptor with valid email."""
+        DescriptorMock.value = api.EmailField(required=True)
+        try:
+            DescriptorMock("me@otus.ru")
+            DescriptorMock("john-doe@example.com")
+        except Exception as e:
+            self.error = str(e)
+        self.assertFalse(self.error)
+
+    def test_phone_field_with_non_char(self):
+        """Test `PhoneField` descriptor with list value."""
+        DescriptorMock.value = api.PhoneField(required=True)
+        try:
+            DescriptorMock([8, 8, 0, 0, 2, 0, 0, 0])
+        except ValueError as e:
+            self.error = str(e)
+        self.assertTrue('neither char nor int' in self.error)
+
+    def test_phone_field_with_non_digits(self):
+        """Test `PhoneField` descriptor with non-digits."""
+        DescriptorMock.value = api.PhoneField(required=True)
+        try:
+            DescriptorMock("8903abc")
+        except ValueError as e:
+            self.error = str(e)
+        self.assertTrue('Non-digits' in self.error)
+
+    def test_phone_field_starting_with_non_seven(self):
+        """Test `PhoneField` descriptor with wrong first digit."""
+        DescriptorMock.value = api.PhoneField(required=True)
+        try:
+            DescriptorMock("89030000000")
+        except ValueError as e:
+            self.error = str(e)
+        self.assertTrue('look like' in self.error)
+
+    def test_phone_field_starting_with_wrong_lenght(self):
+        """Test `PhoneField` descriptor with wrong first digit."""
+        DescriptorMock.value = api.PhoneField(required=True)
+        try:
+            DescriptorMock("7903000000")
+        except ValueError as e:
+            self.error = str(e)
+        self.assertTrue('look like' in self.error)
+
+    def test_phone_field_with_valid_value(self):
+        """Test `PhoneField` descriptor with valid dicts."""
+        DescriptorMock.value = api.PhoneField(required=True)
+        try:
+            DescriptorMock("79030000000")
+            DescriptorMock(79030000000)
+        except Exception as e:
+            self.error = str(e)
+        self.assertFalse(self.error)
+
+    def test_date_field_with_wrong_format(self):
+        """Test `DateField` descriptor with wrong format."""
+        DescriptorMock.value = api.DateField(required=True)
+        try:
+            DescriptorMock("1990.01.01")
+        except ValueError as e:
+            self.error = str(e)
+        self.assertTrue('not in format' in self.error)
+
+    def test_date_field_with_valid_value(self):
+        """Test `DateField` descriptor with valid dates."""
+        DescriptorMock.value = api.DateField(required=True)
+        try:
+            DescriptorMock("01.01.1990")
+            DescriptorMock("30.12.1890")
+        except Exception as e:
+            self.error = str(e)
+        self.assertFalse(self.error)
+
+    def test_birthday_field_with_too_old_date(self):
+        """Test `BirthDayField` descriptor with too old date."""
+        DescriptorMock.value = api.BirthDayField(required=True)
+        try:
+            DescriptorMock("01.01.1900")
+        except ValueError as e:
+            self.error = str(e)
+        self.assertTrue('too distant' in self.error)
+
+    def test_birthday_field_with_valid_value(self):
+        """Test `BirthDayField` descriptor with valid dates."""
+        DescriptorMock.value = api.BirthDayField(required=True)
+        try:
+            DescriptorMock("01.01.1990")
+            DescriptorMock("30.12.1995")
+        except Exception as e:
+            self.error = str(e)
+        self.assertFalse(self.error)
+
+    def test_gender_field_with_wrong_code(self):
+        """Test `GenderField` descriptor with broken code."""
+        DescriptorMock.value = api.GenderField(required=True)
+        try:
+            DescriptorMock(3)
+        except ValueError as e:
+            self.error = str(e)
+        self.assertTrue('Invalid' in self.error)
+
+    def test_gender_field_with_valid_value(self):
+        """Test `GenderField` descriptor with valid dates."""
+        DescriptorMock.value = api.GenderField(required=True)
+        try:
+            DescriptorMock(1)
+            DescriptorMock(2)
+        except Exception as e:
+            self.error = str(e)
+        self.assertFalse(self.error)
+
+    def test_client_ids_field_with_non_array(self):
+        """Test `ClientIDsField` descriptor with non-array."""
+        DescriptorMock.value = api.ClientIDsField(required=True)
+        try:
+            DescriptorMock({"a": 1})
+        except ValueError as e:
+            self.error = str(e)
+        self.assertTrue('array' in self.error)
+
+    def test_client_ids_field_with_non_int(self):
+        """Test `ClientIDsField` descriptor with non-int element."""
+        DescriptorMock.value = api.ClientIDsField(required=True)
+        try:
+            DescriptorMock([1, 2, "3"])
+        except ValueError as e:
+            self.error = str(e)
+        self.assertTrue('Non-integer' in self.error)
+
+    def test_client_ids_field_with_valid_value(self):
+        """Test `ClientIDsField` descriptor with valid dates."""
+        DescriptorMock.value = api.ClientIDsField(required=True)
+        try:
+            DescriptorMock([1, 2, 3])
+            DescriptorMock([100])
+        except Exception as e:
+            self.error = str(e)
+        self.assertFalse(self.error)
+
 
 # -----------------------------------------------------------------------------
 # Functional tests.

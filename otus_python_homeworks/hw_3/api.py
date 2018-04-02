@@ -136,7 +136,7 @@ class PhoneField(BaseField):
                 raise ValueError("Value is neither char nor int: %s" % value)
             try:
                 value = int(value)
-            except TypeError:
+            except ValueError:
                 raise ValueError("Non-digits are in phone value: %s" % value)
             value = str(value)
             phone_validity = (
