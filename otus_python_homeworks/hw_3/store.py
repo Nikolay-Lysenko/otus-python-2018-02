@@ -6,7 +6,7 @@ from pymemcache.client import base as memcache_base
 
 @contextmanager
 def connect_in_hammer_mode(store, sleep_time=1, sleep_factor=1):
-    # type: (Store, int, int) -> ...
+    # type: (InMemoryStorage, int, int) -> ...
     """
     Try to connect several times. Always close open connections.
     """
@@ -23,7 +23,7 @@ def connect_in_hammer_mode(store, sleep_time=1, sleep_factor=1):
             conn.close()
 
 
-class Store(object):
+class InMemoryStorage(object):
     """
     This class provides specified in the homework description API to
     in-memory NoSQL database `memcached`.

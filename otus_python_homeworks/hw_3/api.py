@@ -27,7 +27,7 @@ from BaseHTTPServer import HTTPServer, BaseHTTPRequestHandler
 from weakref import WeakKeyDictionary
 
 from scoring import get_score, get_interests
-from store import Store
+from store import InMemoryStorage
 
 
 SALT = "Otus"
@@ -298,8 +298,8 @@ def check_auth(request):
     return False
 
 
-def clients_interests_handler(request, context, store):
-    # type: (MethodRequest, dict, bool) -> (str, int)
+def clients_interests_handler(request, context, storage):
+    # type: (MethodRequest, dict, InMemoryStorage) -> (str, int)
     """Handle request for clients interests."""
     response, code = {}, OK
     try:
@@ -314,12 +314,12 @@ def clients_interests_handler(request, context, store):
         return response, code
     context['nclients'] = len(nested_request.client_ids)
     for client_id in nested_request.client_ids:
-        response[client_id] = get_interests(store, client_id)
+        response[client_id] = get_interests(storage, client_id)
     return response, code
 
 
-def online_score_handler(request, context, store):
-    # type: (MethodRequest, dict, bool) -> (str, int)
+def online_score_handler(request, context, storage):
+    # type: (MethodRequest, dict, InMemoryStorage) -> (str, int)
     """Handle request for scores."""
     response, code = {}, OK
     try:
@@ -338,13 +338,13 @@ def online_score_handler(request, context, store):
     context['has'] = [
         field for field in fields if nested_request.__getattribute__(field)
     ]
-    score = 42 if request.is_admin else get_score(store, **request.arguments)
+    score = 42 if request.is_admin else get_score(storage, **request.arguments)
     response = {'score': score}
     return response, code
 
 
-def method_handler(request, context, store):
-    # type: (dict, dict, bool) -> (str, int)
+def method_handler(request, context, storage):
+    # type: (dict, dict, InMemoryStorage) -> (str, int)
     """Redirect arbitrary request to corresponding handler."""
     try:
         request = MethodRequest(**request['body'])
@@ -360,7 +360,7 @@ def method_handler(request, context, store):
         'online_score': online_score_handler
     }
     try:
-        response, code = handlers[request.method](request, context, store)
+        response, code = handlers[request.method](request, context, storage)
     except KeyError:
         logging.exception('Unrecognized method: ')
         response = 'Unrecognized method: %s' % request.method
@@ -375,7 +375,7 @@ class MainHTTPHandler(BaseHTTPRequestHandler):
     router = {
         "method": method_handler
     }
-    store = Store()
+    storage = InMemoryStorage()
 
     @staticmethod
     def get_request_id(headers):
@@ -390,7 +390,7 @@ class MainHTTPHandler(BaseHTTPRequestHandler):
             request = json.loads(data_string)
         except:
             logging.exception('Can not parse JSON: ')
-            code = BAD_REQUEST
+            code = INVALID_REQUEST
 
         if request:
             path = self.path.strip("/")
@@ -400,7 +400,7 @@ class MainHTTPHandler(BaseHTTPRequestHandler):
                 try:
                     response, code = self.router[path](
                         {"body": request, "headers": self.headers},
-                        context, self.store
+                        context, self.storage
                     )
                 except Exception, e:
                     logging.exception("Unexpected error: %s" % e)
