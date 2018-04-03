@@ -12,6 +12,14 @@ import os
 from otus_python_homeworks.hw_1.log_analyzer import LogAnalyzer
 
 
+def convert_to_abs_path(rel_path):
+    # type: (str) -> str
+    """
+    Convert relative path to absolute path.
+    """
+    return os.path.join(os.path.dirname(__file__), rel_path)
+
+
 class TestLogAnalyzer(unittest.TestCase):
     """
     Tests of `LogAnalyzer` class.
@@ -20,8 +28,8 @@ class TestLogAnalyzer(unittest.TestCase):
     def test_analyze_logs(self):
         config = {
             "report_size": 1000,
-            "report_dir": "./reports",
-            "log_dir": "./log",
+            "report_dir": convert_to_abs_path("reports"),
+            "log_dir": convert_to_abs_path("log"),
             "ts_path": "/var/tmp/log_analyzer.ts",
             "save_results_as_attr": True
         }
