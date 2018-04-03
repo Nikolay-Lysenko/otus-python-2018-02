@@ -1,3 +1,11 @@
+"""
+Test suites for API from the third homework.
+
+To run tests from here, `redis` should be installed and operating
+(see `README.md` of `tests` directory for more details).
+"""
+
+
 import unittest
 
 from otus_python_homeworks.hw_3 import api, store
@@ -40,17 +48,22 @@ class StorageMock(object):
     Mock for `store.InMemoryStorage` class.
     """
 
-    def __init__(self):
+    def __init__(self, available=True):
+        self.available = available
         self.kv = dict()
 
     def cache_set(self, key, value, expires=None):
-        self.kv[key] = value
+        if self.available:
+            self.kv[key] = value
 
     def cache_get(self, key):
-        return self.kv.get(key)
+        return self.kv.get(key) if self.available else None
 
     def get(self, key):
-        return self.kv.get(key)
+        if self.available:
+            return self.kv.get(key)
+        else:
+            raise RuntimeError
 
 
 class DescriptorMock(object):
@@ -299,17 +312,31 @@ class TestInMemoryStorage(unittest.TestCase):
 
     def test_cache_set_and_cache_get(self):
         """Test `cache_get` and `cache_set` methods."""
-        self.storage.cache_set("1", "a", 60)
+        self.storage.cache_set("1", "a")
+        result = self.storage.cache_get("1")
+        self.assertEqual("a", result)
+
+    def test_cache_set_and_cache_get_with_interrupted_connection(self):
+        """Test reconnecting of `cache_get` and `cache_set` methods."""
+        self.storage.cache_set("1", "a")
+        self.storage.close_connection()
         result = self.storage.cache_get("1")
         self.assertEqual("a", result)
 
     def test_get(self):
         """Test `get` method."""
-        try:
-            self.storage.get("2")
-        except KeyError as e:
-            self.error_msg = str(e)
-        self.assertTrue('is absent' in self.error_msg)
+        result = self.storage.get("2")
+        self.assertTrue(result is None)
+        self.storage.cache_set("1", "a")
+        result = self.storage.get("1")
+        self.assertEqual("a", result)
+
+    def test_get_with_interrupted_connection(self):
+        """Test reconnecting og `get` method."""
+        self.storage.cache_set("1", "a")
+        self.storage.close_connection()
+        result = self.storage.get("1")
+        self.assertEqual("a", result)
 
 
 # -----------------------------------------------------------------------------
@@ -529,8 +556,9 @@ class TestMethodHandler(unittest.TestCase):
         Test that API fails gracefully if extra arguments
         are passed.
         """
-        _, code = self.get_response(request)
+        response, code = self.get_response(request)
         self.assertEqual(api.INVALID_REQUEST, code)
+        self.assertTrue('Extra' in response)
 
     def test_online_score_handler_with_all_arguments(self):
         """
@@ -548,6 +576,53 @@ class TestMethodHandler(unittest.TestCase):
         response, code = self.get_response(request)
         self.assertEqual(api.OK, code)
         self.assertEqual(5.0, response["score"])
+        self.assertEqual(
+            sorted(request["arguments"].keys()), sorted(self.context['has'])
+        )
+
+    def test_online_score_handler_with_all_arguments_and_no_mock(self):
+        """
+        Test that API returns maximum score if all args are passed
+        (real instance of `InMemoryStorage` used instead of its mock).
+        """
+        self.storage = store.InMemoryStorage()
+        request = {
+            "account": "horns&hoofs", "login": "h&f",
+            "method": "online_score", "token": TOKEN,
+            "arguments": {
+                "phone": "79175002040", "email": "stupnikov@otus.ru",
+                "first_name": "John", "last_name": "Doe",
+                "birthday": "01.01.1990", "gender": 1
+            }
+        }
+        response, code = self.get_response(request)
+        self.assertEqual(api.OK, code)
+        self.assertEqual(5.0, response["score"])
+        self.assertEqual(
+            sorted(request["arguments"].keys()), sorted(self.context['has'])
+        )
+
+    def test_online_score_handler_with_unavailable_storage(self):
+        """
+        Test that API still returns maximum score if all args
+        are passed, but storage is unavailable.
+        """
+        self.storage.available = False
+        request = {
+            "account": "horns&hoofs", "login": "h&f",
+            "method": "online_score", "token": TOKEN,
+            "arguments": {
+                "phone": "79175002040", "email": "stupnikov@otus.ru",
+                "first_name": "John", "last_name": "Doe",
+                "birthday": "01.01.1990", "gender": 1
+            }
+        }
+        response, code = self.get_response(request)
+        self.assertEqual(api.OK, code)
+        self.assertEqual(5.0, response["score"])
+        self.assertEqual(
+            sorted(request["arguments"].keys()), sorted(self.context['has'])
+        )
 
     def test_online_score_handler_with_incomplete_arguments(self):
         """
@@ -565,8 +640,33 @@ class TestMethodHandler(unittest.TestCase):
         response, code = self.get_response(request)
         self.assertEqual(api.OK, code)
         self.assertEqual(4.5, response["score"])
+        self.assertEqual(
+            sorted(request["arguments"].keys()), sorted(self.context['has'])
+        )
 
-    def test_clients_interests_handler(self):
+    def test_online_score_handler_with_empty_arguments(self):
+        """
+        Test that API returns proper score if all args are passed,
+        but some have empty values.
+        """
+        request = {
+            "account": "horns&hoofs", "login": "h&f",
+            "method": "online_score", "token": TOKEN,
+            "arguments": {
+                "phone": "79175002040", "email": "stupnikov@otus.ru",
+                "first_name": "John", "last_name" : "",
+                "birthday": "01.01.1990", "gender": 1
+            }
+        }
+        response, code = self.get_response(request)
+        self.assertEqual(api.OK, code)
+        self.assertEqual(4.5, response["score"])
+        self.assertEqual(
+            sorted([k for k, v in request["arguments"].items() if v]),
+            sorted(self.context['has'])
+        )
+
+    def test_clients_interests_handler_with_valid_arguments(self):
         """
         Test that clients interests API works as expected
         if correct request is sent.
@@ -584,6 +684,47 @@ class TestMethodHandler(unittest.TestCase):
         self.assertEqual(api.OK, code)
         self.assertEqual([u'tv', u'sport'], response[1])
         self.assertEqual([u'photo', u'food'], response[2])
+        self.assertEqual(2, self.context['nclients'])
+
+    def test_clients_interests_handler_with_valid_arguments_and_no_mock(self):
+        """
+        Test that clients interests API works as expected
+        if correct request is sent (real instance of
+        `InMemoryStorage` used instead of its mock).
+        """
+        self.storage = store.InMemoryStorage()
+        kv = {"i:1": '["tv", "sport"]', "i:2": '["photo", "food"]'}
+        for k, v in kv.items():
+            self.storage.cache_set(k, v)
+        request = {
+            "account": "horns&hoofs", "login": "h&f",
+            "method": "clients_interests", "token": TOKEN,
+            "arguments": {
+                "client_ids": [1, 2]
+            }
+        }
+        response, code = self.get_response(request)
+        self.assertEqual(api.OK, code)
+        self.assertEqual([u'tv', u'sport'], response[1])
+        self.assertEqual([u'photo', u'food'], response[2])
+        self.assertEqual(2, self.context['nclients'])
+
+    def test_clients_interests_handler_without_storage(self):
+        """
+        Test that clients interests API fails gracefully when
+        storage is unavailable.
+        """
+        self.storage.available = False
+        request = {
+            "account": "horns&hoofs", "login": "h&f",
+            "method": "clients_interests", "token": TOKEN,
+            "arguments": {
+                "client_ids": [1, 2]
+            }
+        }
+        response, code = self.get_response(request)
+        self.assertEqual(api.INTERNAL_ERROR, code)
+        self.assertTrue('Can not read' in response)
 
 
 # -----------------------------------------------------------------------------

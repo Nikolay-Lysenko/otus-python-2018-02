@@ -302,17 +302,24 @@ def clients_interests_handler(request, context, storage):
     response, code = {}, OK
     try:
         nested_request = ClientsInterestsRequest(**request.arguments)
-    except TypeError as e:
-        logging.exception('Extra arguments in request: ')
-        response, code = str(e), INVALID_REQUEST
+    except TypeError:
+        msg = 'Extra arguments in request: '
+        logging.exception('%s :' % msg)
+        response, code = msg, INVALID_REQUEST
         return response, code
     except ValueError as e:
         logging.exception('Validation error: ')
         response, code = str(e), BAD_REQUEST
         return response, code
+    try:
+        for client_id in nested_request.client_ids:
+            response[client_id] = get_interests(storage, client_id)
+    except (RuntimeError, KeyError):
+        msg = 'Can not read from storage'
+        logging.exception('%s: ' % msg)
+        response, code = msg, INTERNAL_ERROR
+        return response, code
     context['nclients'] = len(nested_request.client_ids)
-    for client_id in nested_request.client_ids:
-        response[client_id] = get_interests(storage, client_id)
     return response, code
 
 
@@ -322,9 +329,10 @@ def online_score_handler(request, context, storage):
     response, code = {}, OK
     try:
         nested_request = OnlineScoreRequest(**request.arguments)
-    except TypeError as e:
-        logging.exception('Extra arguments in request: ')
-        response, code = str(e), INVALID_REQUEST
+    except TypeError:
+        msg = 'Extra arguments in request: '
+        logging.exception('%s :' % msg)
+        response, code = msg, INVALID_REQUEST
         return response, code
     except ValueError as e:
         logging.exception('Validation error: ')
