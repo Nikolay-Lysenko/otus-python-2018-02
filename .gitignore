@@ -107,3 +107,6 @@ ENV/
 
 # Git is for code, not for data
 *.gz
+
+# Project-specific files
+httptest/
