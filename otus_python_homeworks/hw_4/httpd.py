@@ -23,7 +23,35 @@ class FilesHTTPHandler(object):
     """
 
     def __init__(self, root):
+        # type: (str) -> ...
         self.root = root
+        self.http_request_end = '\r\n\r\n'
+        self.chunk_size_in_bytes = 4096
+        self.client_socket = None
+
+    def set_client_socket(self, client_socket):
+        # type: (socket.socket) -> type(None)
+        """Set client socket."""
+        self.client_socket = client_socket
+
+    def receive_request(self):
+        # type: (...) -> str
+        """
+        Receive full request sent by client.
+        The method relies on assumption that every valid request
+        ends with `self.http_request_end`.
+        """
+        request = ''
+        while True:
+            chunk = self.client_socket.recv(self.chunk_size_in_bytes)
+            request += chunk
+            if self.http_request_end in request:
+                break
+            if not chunk:
+                logging.info("Request ended with empty chunk.")
+                break
+        request = request.split(self.http_request_end)[0]
+        return request
 
 
 class VanillaHTTPServer(object):
@@ -38,14 +66,24 @@ class VanillaHTTPServer(object):
         maximum number of queued client connections
     """
 
-    def __init__(self, host, port, http_handler, max_backlog=5):
-        # type: (str, int, VanillaHTTPHandler, int) -> ...
+    def __init__(self, host, port, root, handler, max_backlog=5):
+        # type: (str, int, str, str, int) -> ...
         self.host = host
         self.port = port
-        self.http_handler = http_handler
+        self.root = root
+        self.str_to_type = {'files_handler': FilesHTTPHandler}
+        self.handler = None
+        self.__set_http_handler(handler)
         self.max_backlog = max_backlog
         self.socket = None
         self.__make_socket()
+
+    def __set_http_handler(self, handler_name):
+        # type: (str) -> type(None)
+        # Validate type of HTTP requests handler and store it as attribute.
+        if handler_name not in self.str_to_type.keys():
+            raise ValueError("Unknown handler type: {}".format(handler_name))
+        self.handler = handler_name
 
     def __make_socket(self):
         # type: (...) -> ...
@@ -63,13 +101,15 @@ class VanillaHTTPServer(object):
             self.socket.bind((self.host, self.port))
             self.socket.listen(self.max_backlog)
             logging.info('Socket listens {}:{}'.format(self.host, self.port))
-        except:
+        except Exception as e:
             logging.exception('Can not make socket: ')
+            raise e
 
-    @staticmethod
-    def __handle_client_connection(client_socket):
+    def __handle_client_connection(self, client_socket):
         # type: (socket.socket) -> type(None)
-        request = client_socket.recv(1024)
+        handler = self.str_to_type[self.handler](self.root)
+        handler.set_client_socket(client_socket)
+        request = handler.receive_request()
         print 'Received {}'.format(request)
         client_socket.send('Answer')
         client_socket.close()
@@ -82,13 +122,9 @@ class VanillaHTTPServer(object):
         while True:
             client_socket = None
             try:
-                client_socket, client_address = self.socket.accept()
-                client_host_port = '{}:{}'.format(
-                    client_address[0], client_address[1]
-                )
-                logging.info(
-                    'Accepted connection from {}'.format(client_host_port)
-                )
+                client_socket, client_addr = self.socket.accept()
+                client_from = '{}:{}'.format(client_addr[0], client_addr[1])
+                logging.info('Accepted connection from {}'.format(client_from))
                 client_handler = threading.Thread(
                     target=self.__handle_client_connection,
                     args=(client_socket,)
@@ -101,7 +137,7 @@ class VanillaHTTPServer(object):
                     client_socket.close()
                 logging.exception('Can not handle a request: ')
 
-    def server_close(self):
+    def shut_down(self):
         # type: (...) -> type(None)
         """
         Shut down server.
@@ -172,7 +208,7 @@ def main():
     cli_args = parse_cli_args()
     set_logging(cli_args.logging_file)
     server = VanillaHTTPServer(
-        cli_args.host, cli_args.port, FilesHTTPHandler(cli_args.root)
+        cli_args.host, cli_args.port, cli_args.root, handler='files_handler'
     )
     # `multiprocessing.Pool` is not used below, because `KeyboardInterrupt`
     # never reaches a parent process if it is used.
@@ -190,7 +226,7 @@ def main():
                 worker.terminate()
     except:
         logging.exception('Unhandled exception: ')
-    server.server_close()
+    server.shut_down()
 
 
 if __name__ == '__main__':
