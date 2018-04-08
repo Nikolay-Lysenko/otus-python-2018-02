@@ -1,3 +1,6 @@
+# -*- coding: utf-8 -*-
+
+
 """
 A simple web server in plain Python.
 
@@ -5,28 +8,139 @@ Author: Nikolay Lysenko
 """
 
 
-import socket
+import argparse
+import logging
+import os
 import threading
 import multiprocessing
-import logging
-import argparse
-import os
+import socket
+import urlparse
+import urllib
+import mimetypes
+import datetime
+from collections import OrderedDict
+
+
+OK = 200
+NOT_FOUND = 404
+METHOD_NOT_ALLOWED = 405
+
+MESSAGES = {
+    OK: "OK",
+    NOT_FOUND: "Not Found",
+    METHOD_NOT_ALLOWED: "Method Not Allowed"
+}
+
+
+class HTTPResponseMaker(object):
+    """
+    This class provides interface for making HTTP responses.
+    """
+    status_line_template = "HTTP/1.1 {} {}"
+    http_header_end = '\r\n\r\n'
+
+    def __init__(self, status, method, path):
+        # type: (int, str, str) -> ...
+        self.status = status
+        self.method = method
+        self.path = path
+        self.headers = None
+        self.body = None
+
+    def __prepare_response(self):
+        # Fill headers and body.
+        self.headers = OrderedDict({
+            "Date": None,
+            "Server": "Otus-Python-HW04",
+            "Content‐Length": self.__measure_content_length(),
+            "Content‐Type": self.__infer_content_type(),
+            "Connection": self.__decide_about_connection()
+        })
+        self.body = self.__make_body() if self.method == 'GET' else ''
+
+    def __measure_content_length(self):
+        # Figure out content length.
+        result = (
+            os.path.getsize(self.path)
+            if self.path is not None and self.status == OK
+            else 0
+        )
+        return result
+
+    def __infer_content_type(self):
+        # Return type of content in a proper format.
+        content_type, content_encoding = (
+            mimetypes.guess_type(self.path)
+            if self.path is not None
+            else ('text/html', 'utf-8')
+        )
+        return content_type
+
+    def __decide_about_connection(self):
+        # Decide whether a client should be told to close connection.
+        return 'keep-alive' if self.method == 'HEAD' else 'close'
+
+    def __make_body(self):
+        # Make body of a response.
+        if self.path is None or self.method != 'GET':
+            return ''
+        with open(self.path, 'r') as source_file:
+            body = source_file.read()
+        return body
+
+    @staticmethod
+    def __get_current_time():
+        # Return a string representation of a date in accordance with HTTP/1.1
+        now = datetime.datetime.now()
+        weekday = now.weekday()
+        weekday = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][weekday]
+        month = now.month - 1
+        month = [
+            "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+        ][month]
+        template = "%s, %02d %s %04d %02d:%02d:%02d GMT"
+        result = template % (
+            weekday, now.day, month, now.year, now.hour, now.minute, now.second
+        )
+        return result
+
+    def render_response(self):
+        """
+        Return response based on class attributes.
+        """
+        status_line = self.status_line_template.format(
+            self.status, MESSAGES[self.status]
+        )
+        self.__prepare_response()
+        self.headers['Date'] = self.__get_current_time()
+        headers = '\r\n'.join(
+            ['{}: {}'.format(k, v) for k, v in self.headers.items()]
+        )
+        response = (
+            status_line + '\r\n' + headers + self.http_header_end + self.body
+        )
+        logging.debug('Response is: ')
+        logging.debug(status_line)
+        logging.debug(headers)
+        return response
 
 
 class FilesHTTPHandler(object):
     """
-    Simple HTTPHandler that provides access to static files.
+    Simple HTTP handler that provides access to static files.
 
     :param root:
         root of a directory with static files that can be
         returned
     """
+    http_request_end = '\r\n\r\n'
+    chunk_size_in_bytes = 4096
+    allowed_methods = ['GET', 'HEAD']
 
     def __init__(self, root):
         # type: (str) -> ...
         self.root = root
-        self.http_request_end = '\r\n\r\n'
-        self.chunk_size_in_bytes = 4096
         self.client_socket = None
 
     def set_client_socket(self, client_socket):
@@ -52,6 +166,55 @@ class FilesHTTPHandler(object):
                 break
         request = request.split(self.http_request_end)[0]
         return request
+
+    def __extract_method(self, request):
+        # type (str) -> str
+        # Extract requested method from raw request.
+        try:
+            method = request.split(' ')[0]
+        except:
+            raise ValueError('Bad request')
+        if method not in self.allowed_methods:
+            raise ValueError(MESSAGES[METHOD_NOT_ALLOWED])
+        return method
+
+    @staticmethod
+    def __extract_filepath(request):
+        # type (str) -> str
+        # Extract path to requested file from raw request.
+        try:
+            url = request.split(' ')[1]
+            parsed_url = urlparse.urlparse(url)
+            path = urllib.unquote(parsed_url.path).decode('utf8').lstrip('/')
+            path = os.path.join(os.path.dirname(__file__), path)
+        except:
+            raise ValueError('Bad request')
+        if os.path.isdir(path):
+            path += '/'
+        return path
+
+    def parse_request(self, request):
+        # (str) -> (int, str, str)
+        """
+        Parse raw request.
+        If path is a directory, point to `index.html` file from there.
+        If resulting path does not exist or looks suspiciously,
+        replace path with `None`.
+        """
+        try:
+            method = self.__extract_method(request)
+            path = self.__extract_filepath(request)
+        except ValueError as e:
+            msg = str(e)
+            if 'Bad request' in msg or MESSAGES[METHOD_NOT_ALLOWED] in msg:
+                return METHOD_NOT_ALLOWED, '', ''
+            else:
+                raise e
+        if path.endswith('/'):
+            path = os.path.join(path, 'index.html')
+        if not os.path.isfile(path) or '../' in path:
+            return NOT_FOUND, method, None
+        return OK, method, path
 
 
 class VanillaHTTPServer(object):
@@ -110,8 +273,14 @@ class VanillaHTTPServer(object):
         handler = self.str_to_type[self.handler](self.root)
         handler.set_client_socket(client_socket)
         request = handler.receive_request()
-        print 'Received {}'.format(request)
-        client_socket.send('Answer')
+        logging.debug('Received {}'.format(request))
+        status, method, path = handler.parse_request(request)
+        logging.debug(
+            'Status, method, path: {}, {}, {}'.format(status, method, path)
+        )
+        response_maker = HTTPResponseMaker(status, method, path)
+        response = response_maker.render_response()
+        client_socket.sendall(response)
         client_socket.close()
 
     def serve_forever(self):
@@ -199,7 +368,7 @@ def set_logging(logging_filename):
         filename=logging_filename,
         format=msg_format,
         datefmt=datetime_fmt,
-        level=logging.INFO
+        level=logging.DEBUG  # TODO: logging.INFO
     )
     logging.info("Logging is set.")
 
