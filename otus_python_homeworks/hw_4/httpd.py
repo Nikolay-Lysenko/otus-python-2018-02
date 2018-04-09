@@ -1,6 +1,3 @@
-# -*- coding: utf-8 -*-
-
-
 """
 A simple web server in plain Python.
 
@@ -52,8 +49,8 @@ class HTTPResponseMaker(object):
         self.headers = OrderedDict({
             "Date": None,
             "Server": "Otus-Python-HW04",
-            "Content‐Length": self.__measure_content_length(),
-            "Content‐Type": self.__infer_content_type(),
+            "Content-Length": self.__measure_content_length(),
+            "Content-Type": self.__infer_content_type(),
             "Connection": self.__decide_about_connection()
         })
         self.body = self.__make_body() if self.method == 'GET' else ''
