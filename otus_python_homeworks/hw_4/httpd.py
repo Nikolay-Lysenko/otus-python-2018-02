@@ -19,11 +19,13 @@ from collections import OrderedDict
 
 
 OK = 200
+FORBIDDEN = 403
 NOT_FOUND = 404
 METHOD_NOT_ALLOWED = 405
 
 MESSAGES = {
     OK: "OK",
+    FORBIDDEN: "Forbidden",
     NOT_FOUND: "Not Found",
     METHOD_NOT_ALLOWED: "Method Not Allowed"
 }
@@ -32,6 +34,13 @@ MESSAGES = {
 class HTTPResponseMaker(object):
     """
     This class provides interface for making HTTP responses.
+
+    :param status:
+        status of HTTP response
+    :param method:
+        requested method (such as GET or HEAD)
+    :param path:
+        requested path to a static file
     """
     status_line_template = "HTTP/1.1 {} {}"
     http_header_end = '\r\n\r\n'
@@ -45,6 +54,7 @@ class HTTPResponseMaker(object):
         self.body = None
 
     def __prepare_response(self):
+        # type: (...) -> type(None)
         # Fill headers and body.
         self.headers = OrderedDict({
             "Date": None,
@@ -56,6 +66,7 @@ class HTTPResponseMaker(object):
         self.body = self.__make_body() if self.method == 'GET' else ''
 
     def __measure_content_length(self):
+        # type: (...) -> int
         # Figure out content length.
         result = (
             os.path.getsize(self.path)
@@ -65,6 +76,7 @@ class HTTPResponseMaker(object):
         return result
 
     def __infer_content_type(self):
+        # type: (...) -> str
         # Return type of content in a proper format.
         content_type, content_encoding = (
             mimetypes.guess_type(self.path)
@@ -74,10 +86,12 @@ class HTTPResponseMaker(object):
         return content_type
 
     def __decide_about_connection(self):
+        # type: (...) -> str
         # Decide whether a client should be told to close connection.
         return 'keep-alive' if self.method == 'HEAD' else 'close'
 
     def __make_body(self):
+        # type: (...) -> str
         # Make body of a response.
         if self.path is None or self.method != 'GET':
             return ''
@@ -87,6 +101,7 @@ class HTTPResponseMaker(object):
 
     @staticmethod
     def __get_current_time():
+        # type: (...) -> str
         # Return a string representation of a date in accordance with HTTP/1.1
         now = datetime.datetime.now()
         weekday = now.weekday()
@@ -103,6 +118,7 @@ class HTTPResponseMaker(object):
         return result
 
     def render_response(self):
+        # type: (...) -> str
         """
         Return response based on class attributes.
         """
@@ -191,7 +207,7 @@ class FilesHTTPHandler(object):
         return path
 
     def parse_request(self, request):
-        # (str) -> (int, str, str)
+        # type: (str) -> (int, str, str)
         """
         Parse raw request.
         If path is a directory, point to `index.html` file from there.
@@ -209,9 +225,27 @@ class FilesHTTPHandler(object):
                 raise e
         if path.endswith('/'):
             path = os.path.join(path, 'index.html')
+            if not os.path.isfile(path):
+                return FORBIDDEN, method, None
         if not os.path.isfile(path) or '../' in path:
             return NOT_FOUND, method, None
         return OK, method, path
+
+    def handle(self):
+        # type: (...) -> type(None)
+        """
+        Do all work that relates to a client socket.
+        """
+        request = self.receive_request()
+        logging.debug('Received {}'.format(request))
+        status, method, path = self.parse_request(request)
+        logging.debug(
+            'Status, method, path: {}, {}, {}'.format(status, method, path)
+        )
+        response_maker = HTTPResponseMaker(status, method, path)
+        response = response_maker.render_response()
+        self.client_socket.sendall(response)
+        self.client_socket.close()
 
 
 class VanillaHTTPServer(object):
@@ -269,16 +303,7 @@ class VanillaHTTPServer(object):
         # type: (socket.socket) -> type(None)
         handler = self.str_to_type[self.handler](self.root)
         handler.set_client_socket(client_socket)
-        request = handler.receive_request()
-        logging.debug('Received {}'.format(request))
-        status, method, path = handler.parse_request(request)
-        logging.debug(
-            'Status, method, path: {}, {}, {}'.format(status, method, path)
-        )
-        response_maker = HTTPResponseMaker(status, method, path)
-        response = response_maker.render_response()
-        client_socket.sendall(response)
-        client_socket.close()
+        handler.handle()
 
     def serve_forever(self):
         # type: (...) -> type(None)
@@ -365,7 +390,7 @@ def set_logging(logging_filename):
         filename=logging_filename,
         format=msg_format,
         datefmt=datetime_fmt,
-        level=logging.DEBUG  # TODO: logging.INFO
+        level=logging.INFO
     )
     logging.info("Logging is set.")
 
