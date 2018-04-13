@@ -107,6 +107,8 @@ ENV/
 
 # Git is for code, not for data
 *.gz
+*.db
+*.sqlite3
 
 # Project-specific files
 httptest/
