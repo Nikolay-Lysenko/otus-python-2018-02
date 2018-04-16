@@ -26,5 +26,5 @@ setup(
     keywords='python_courses homeworks',
     packages=find_packages(exclude=['tests', 'docs']),
     python_requires='>=2.7, <3',
-    install_requires=['redis']
+    install_requires=['redis', 'django']
 )
