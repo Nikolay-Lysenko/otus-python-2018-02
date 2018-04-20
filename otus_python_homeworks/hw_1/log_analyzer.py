@@ -307,7 +307,7 @@ def parse_cli_args():
              'of the form: "KEY value" where KEY must be one of these: '
              'REPORT_SIZE (number of top URLS to be included), '
              'REPORT_DIR (directory where report file will be created), '
-             'LOG_DIR (directory that contains initial logs) ,'
+             'LOG_DIR (directory that contains initial logs), '
              'LOGGING_FILE (full path to file where logs of script execution '
              'will be created, by default stdout is used instead of a file), '
              'TS_PATH (full path to file where timestamp of last successful '
@@ -388,10 +388,10 @@ def set_logging(logging_filename):
     :return:
         None
     """
-    filename_is_provided = logging_filename is not None
-    path_to_file_exists = os.path.isdir(os.path.dirname(logging_filename))
-    if filename_is_provided and not path_to_file_exists:
-        os.makedirs(logging_filename)
+    if logging_filename is not None:
+        logging_dir = os.path.dirname(logging_filename)
+        if not os.path.isdir(logging_dir):
+            os.makedirs(logging_dir)
     msg_format = '[%(asctime)s] %(levelname).1s %(message)s'
     datetime_fmt = '%Y.%m.%d %H:%M:%S'
     logging.basicConfig(
