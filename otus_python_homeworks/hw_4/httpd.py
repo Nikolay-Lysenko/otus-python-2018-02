@@ -103,19 +103,8 @@ class HTTPResponseMaker(object):
     def __get_current_time():
         # type: (...) -> str
         # Return a string representation of a date in accordance with HTTP/1.1
-        now = datetime.datetime.now()
-        weekday = now.weekday()
-        weekday = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][weekday]
-        month = now.month - 1
-        month = [
-            "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
-        ][month]
-        template = "%s, %02d %s %04d %02d:%02d:%02d GMT"
-        result = template % (
-            weekday, now.day, month, now.year, now.hour, now.minute, now.second
-        )
-        return result
+        res = datetime.datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S GMT")
+        return res
 
     def render_response(self):
         # type: (...) -> str
