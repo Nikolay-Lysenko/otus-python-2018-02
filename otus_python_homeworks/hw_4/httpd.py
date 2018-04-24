@@ -370,9 +370,10 @@ def set_logging(logging_filename):
     :return:
         None
     """
-    fname_passed = logging_filename is not None
-    if fname_passed and not os.path.isdir(os.path.dirname(logging_filename)):
-        os.makedirs(logging_filename)
+    if logging_filename is not None:
+        logging_dir = os.path.dirname(logging_filename)
+        if not os.path.isdir(logging_dir):
+            os.makedirs(logging_dir)
     msg_format = '[%(asctime)s] %(levelname).1s %(message)s'
     datetime_fmt = '%Y.%m.%d %H:%M:%S'
     logging.basicConfig(
