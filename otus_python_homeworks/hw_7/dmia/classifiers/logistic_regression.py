@@ -52,6 +52,7 @@ class LogisticRegression:
             #########################################################################
             indices = np.random.choice(num_train, batch_size)
             X_batch, y_batch = X[indices, :], y[indices]
+            print X_batch
             #########################################################################
             #                       END OF YOUR CODE                                #
             #########################################################################
@@ -64,7 +65,7 @@ class LogisticRegression:
             # TODO:                                                                 #
             # Update the weights using the gradient and the learning rate.          #
             #########################################################################
-            self.w = self.w + learning_rate * grad_w
+            self.w = self.w - learning_rate * grad_w
             #########################################################################
             #                       END OF YOUR CODE                                #
             #########################################################################
@@ -94,7 +95,7 @@ class LogisticRegression:
         # Implement this method. Store the probabilities of classes in y_proba.   #
         # Hint: It might be helpful to use np.vstack and np.sum                   #
         ###########################################################################
-        pos_class_proba = sigmoid(np.dot(X, self.w.T))
+        pos_class_proba = sigmoid(X.dot(self.w.T))
         y_proba = np.vstack((1 - pos_class_proba, pos_class_proba))
         ###########################################################################
         #                           END OF YOUR CODE                              #
@@ -119,7 +120,7 @@ class LogisticRegression:
         # Implement this method. Store the predicted labels in y_pred.            #
         ###########################################################################
         y_proba = self.predict_proba(X, append_bias=True)
-        y_pred = y_proba.argmax(axis=1)
+        y_pred = y_proba.argmax(axis=0)
         ###########################################################################
         #                           END OF YOUR CODE                              #
         ###########################################################################
@@ -136,7 +137,7 @@ class LogisticRegression:
         - gradient with respect to weights w; an array of same shape as w
         """
         # Compute loss and gradient. Your code should not contain python loops.
-        pos_class_proba = sigmoid(np.dot(X_batch, self.w.T))
+        pos_class_proba = sigmoid(X_batch.dot(self.w.T))
         loss = (
             -np.dot(y_batch, np.log(pos_class_proba))
             - np.dot((1 - y_batch), np.log(1 - pos_class_proba))
