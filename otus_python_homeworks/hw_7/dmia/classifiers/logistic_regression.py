@@ -52,7 +52,6 @@ class LogisticRegression:
             #########################################################################
             indices = np.random.choice(num_train, batch_size)
             X_batch, y_batch = X[indices, :], y[indices]
-            print X_batch
             #########################################################################
             #                       END OF YOUR CODE                                #
             #########################################################################
@@ -65,7 +64,7 @@ class LogisticRegression:
             # TODO:                                                                 #
             # Update the weights using the gradient and the learning rate.          #
             #########################################################################
-            self.w = self.w - learning_rate * grad_w
+            self.w -= learning_rate * grad_w
             #########################################################################
             #                       END OF YOUR CODE                                #
             #########################################################################
